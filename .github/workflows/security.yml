@@ -45,7 +45,7 @@ jobs:
         semgrep --config=auto refactor_mcp/
         
     - name: Upload security reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v6
       if: always()
       with:
         name: security-reports-${{ github.sha }}
