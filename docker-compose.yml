@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  refactor-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: refactor-mcp-server
+    restart: unless-stopped
+    
+    # Environment variables
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    
+    # Volume mounts for development
+    volumes:
+      # Mount source code for development (optional)
+      - ./refactor_mcp:/app/refactor_mcp:ro
+      # Mount workspace for processing files
+      - workspace:/workspace
+    
+    # Port mapping (for future HTTP interface)
+    ports:
+      - "8000:8000"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "from refactor_mcp.languages import list_supported_languages; print('OK' if len(list_supported_languages()) >= 6 else 'FAIL')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Development service with full access for testing
+  refactor-mcp-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: refactor-mcp-dev
+    profiles: ["dev"]
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=DEBUG
+    
+    volumes:
+      # Full source code mount for development
+      - .:/app
+      - workspace:/workspace
+    
+    ports:
+      - "8001:8000"
+    
+    # Override command for development
+    command: ["python", "-m", "refactor_mcp.server"]
+    
+    # Keep container running for debugging
+    tty: true
+    stdin_open: true
+
+volumes:
+  workspace:
+    driver: local

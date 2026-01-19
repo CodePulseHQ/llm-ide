@@ -1,0 +1,106 @@
+name: Bug Report
+description: Report a bug or issue with the MCP server
+title: "[Bug] "
+labels: ["bug", "triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please provide as much detail as possible.
+        
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of refactor-mcp are you using?
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+      
+  - type: dropdown
+    id: language
+    attributes:
+      label: Programming Language
+      description: Which language were you working with when the bug occurred?
+      options:
+        - Python
+        - JavaScript
+        - TypeScript
+        - HTML
+        - CSS
+        - Go
+        - Multiple languages
+        - Not language-specific
+    validations:
+      required: true
+      
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe what happened
+    validations:
+      required: true
+      
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Start the MCP server
+        2. Call the '...' tool
+        3. See error
+    validations:
+      required: true
+      
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: Describe the expected behavior
+    validations:
+      required: true
+      
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: Describe what actually happened
+    validations:
+      required: true
+      
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log Output
+      description: If applicable, add log output to help explain your problem
+      render: shell
+      placeholder: Paste log output here
+      
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Please provide details about your environment
+      value: |
+        - OS: 
+        - Python version: 
+        - Installation method: (pip/docker/source)
+        - MCP client: (Claude Desktop/Custom)
+      render: markdown
+    validations:
+      required: true
+      
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

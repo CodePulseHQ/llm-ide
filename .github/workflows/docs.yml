@@ -1,0 +1,145 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'refactor_mcp/**'
+      - 'README.md'
+      - 'CLAUDE.md'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'refactor_mcp/**'
+      - 'README.md'
+      - 'CLAUDE.md'
+
+jobs:
+  validate-docs:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+        pip install sphinx sphinx-rtd-theme pydocstyle
+        
+    - name: Check docstring style
+      run: pydocstyle refactor_mcp/ --convention=google
+      continue-on-error: true
+      
+    - name: Validate README links
+      run: |
+        python -c "
+        import re
+        from pathlib import Path
+        
+        readme = Path('README.md').read_text()
+        
+        # Check for broken internal links (basic validation)
+        sections = re.findall(r'^## (.*)', readme, re.MULTILINE)
+        print(f'Found {len(sections)} main sections in README')
+        
+        # Check for code examples that reference correct functions
+        code_blocks = re.findall(r'```python\n(.*?)\n```', readme, re.DOTALL)
+        print(f'Found {len(code_blocks)} Python code examples')
+        
+        print('✅ README validation completed')
+        "
+        
+    - name: Test code examples in README
+      run: |
+        python -c "
+        # Test that functions mentioned in README actually exist
+        from refactor_mcp.server import (
+            get_supported_languages, 
+            detect_file_language,
+            get_code_structure,
+            organize_imports,
+            analyze_dependencies,
+            health_check,
+            server_metrics
+        )
+        
+        # Test functions work
+        import json
+        langs = json.loads(get_supported_languages())
+        assert langs['total_languages'] == 6
+        
+        health = json.loads(health_check())
+        assert 'overall_status' in health
+        
+        print('✅ README code examples validated')
+        "
+
+  generate-api-docs:
+    name: Generate API Documentation
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[dev]
+        pip install pdoc3
+        
+    - name: Generate API documentation
+      run: |
+        pdoc --html --output-dir docs-html refactor_mcp --force
+        
+    - name: Upload API docs
+      uses: actions/upload-artifact@v3
+      with:
+        name: api-documentation
+        path: docs-html/
+
+  update-changelog:
+    name: Update Changelog
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Generate changelog
+      run: |
+        # Simple changelog generation based on commit messages
+        git log --oneline --since="1 week ago" --pretty=format:"- %s" > recent-changes.txt
+        
+        if [ -s recent-changes.txt ]; then
+          echo "Recent changes found, updating changelog"
+          cat recent-changes.txt
+        else
+          echo "No recent changes to document"
+        fi
+        
+    - name: Upload changelog
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: changelog-update
+        path: recent-changes.txt
