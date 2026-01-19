@@ -16,6 +16,7 @@ from refactor_mcp.server import (
     rename_symbol,
     reorder_function,
 )
+from tests.utils import unwrap
 
 
 def test_mcp_server_tools():
@@ -65,51 +66,57 @@ def existing():
         print("1. Testing get_code_structure")
         result = get_code_structure(main_file)
         print("✓ Code structure analysis")
-        structure = json.loads(result)
+        structure = unwrap(result)
         assert "classes" in structure
         assert "functions" in structure
 
         # Test 2: Organize imports
         print("\n2. Testing organize_imports")
         result = organize_imports(main_file)
-        print(f"Result: {result}")
-        assert "Successfully organized" in result
+        data = unwrap(result)
+        print(f"Result: {data}")
+        assert "successfully organized" in data.lower()
 
         # Test 3: Add import
         print("\n3. Testing add_import")
         result = add_import(main_file, "json", [])
-        print(f"Result: {result}")
-        assert "Successfully added" in result
+        data = unwrap(result)
+        print(f"Result: {data}")
+        assert "successfully added" in data.lower()
 
         # Test 4: Reorder function
         print("\n4. Testing reorder_function")
         result = reorder_function(main_file, "function_a", "above", "function_b")
-        print(f"Result: {result}")
-        assert "Successfully reordered" in result
+        data = unwrap(result)
+        print(f"Result: {data}")
+        assert "successfully reordered" in data.lower()
 
         # Test 5: Move function
         print("\n5. Testing move_function")
         result = move_function(main_file, target_file, "function_b")
-        print(f"Result: {result}")
-        assert "Successfully moved" in result
+        data = unwrap(result)
+        print(f"Result: {data}")
+        assert "successfully moved" in data.lower()
 
         # Test 6: Move class
         print("\n6. Testing move_class")
         result = move_class(main_file, target_file, "TestClass")
-        print(f"Result: {result}")
-        assert "Successfully moved" in result
+        data = unwrap(result)
+        print(f"Result: {data}")
+        assert "successfully moved" in data.lower()
 
         # Test 7: Analyze dependencies
         print("\n7. Testing analyze_dependencies")
         result = analyze_dependencies(main_file)
         print("✓ Dependency analysis")
-        deps = json.loads(result)
+        deps = unwrap(result)
         assert "imports" in deps
 
         # Test 8: Rename symbol (file scope)
         print("\n8. Testing rename_symbol")
         result = rename_symbol(main_file, "function_a", "renamed_function_a", "file")
-        print(f"Result: {result}")
+        data = unwrap(result)
+        print(f"Result: {data}")
         # Note: This uses rope which may have different behavior
 
         print("\n" + "=" * 60)

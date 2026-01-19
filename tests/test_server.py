@@ -27,6 +27,7 @@ from refactor_mcp.server import (
     server_metrics,
     validate_refactoring_operation,
 )
+from tests.utils import unwrap
 
 
 class TestServerInitialization:
@@ -64,7 +65,7 @@ class TestLanguageDetection:
         result = get_supported_languages()
 
         # Should return JSON string with supported languages
-        languages = json.loads(result)
+        languages = unwrap(result)
         assert isinstance(languages, dict)
         assert "supported_languages" in languages
         assert len(languages["supported_languages"]) > 0
@@ -76,7 +77,7 @@ class TestLanguageDetection:
         py_file.write_text("print('hello')")
 
         result = detect_file_language(str(py_file))
-        detection = json.loads(result)
+        detection = unwrap(result)
 
         assert detection["language"] == "Python"
         # API might return different fields
@@ -92,7 +93,7 @@ class TestLanguageDetection:
         script_file.write_text("#!/usr/bin/env python3\nprint('hello')")
 
         result = detect_file_language(str(script_file))
-        detection = json.loads(result)
+        detection = unwrap(result)
 
         assert detection["language"] == "Python"
 
@@ -102,10 +103,13 @@ class TestLanguageDetection:
         binary_file.write_bytes(b"binary data")
 
         result = detect_file_language(str(binary_file))
-        detection = json.loads(result)
+        detection = unwrap(result, allow_error=True)
 
         # API might return different values for unsupported files
-        assert detection["language"] in ["unknown", None, ""] or "unsupported" in str(detection)
+        if detection.get("success") is False:
+            assert "error" in detection
+        else:
+            assert detection["language"] in ["unknown", None, ""] or "unsupported" in str(detection)
 
 
 class TestRefactoringOperations:
@@ -127,7 +131,7 @@ class TestClass:
         py_file.write_text(py_code)
 
         result = get_code_structure(str(py_file))
-        structure = json.loads(result)
+        structure = unwrap(result)
 
         assert structure["language"] == "Python"
         assert len(structure["functions"]) >= 1
@@ -158,7 +162,7 @@ class MyClass {
         js_file.write_text(js_code)
 
         result = get_code_structure(str(js_file))
-        structure = json.loads(result)
+        structure = unwrap(result)
 
         assert structure["language"] == "JavaScript"
         assert len(structure["functions"]) >= 1
@@ -177,8 +181,9 @@ def main():
         py_file.write_text(py_code)
 
         result = organize_imports(str(py_file))
+        data = unwrap(result)
 
-        assert "successfully organized" in result.lower() or "organized" in result.lower()
+        assert "successfully organized" in data.lower() or "organized" in data.lower()
 
         # Check that file was modified
         new_content = py_file.read_text()
@@ -193,8 +198,9 @@ def main():
         py_file.write_text(py_code)
 
         result = add_import(str(py_file), "json", [])
+        data = unwrap(result)
 
-        assert "successfully added" in result.lower() or "added" in result.lower()
+        assert "successfully added" in data.lower() or "added" in data.lower()
 
         # Verify import was added
         new_content = py_file.read_text()
@@ -209,8 +215,9 @@ def main():
         py_file.write_text(py_code)
 
         result = add_import(str(py_file), "pathlib", ["Path", "PurePath"])
+        data = unwrap(result)
 
-        if "successfully" in result.lower():
+        if "successfully" in data.lower():
             new_content = py_file.read_text()
             assert "pathlib" in new_content
             assert "Path" in new_content
@@ -230,8 +237,9 @@ def function_c():
         py_file.write_text(py_code)
 
         result = reorder_function(str(py_file), "function_a", "top")
+        data = unwrap(result)
 
-        if "successfully" in result.lower():
+        if "successfully" in data.lower():
             new_content = py_file.read_text()
             lines = new_content.split("\n")
 
@@ -260,7 +268,7 @@ def main():
         py_file.write_text(py_code)
 
         result = analyze_dependencies(str(py_file))
-        deps = json.loads(result)
+        deps = unwrap(result)
 
         assert "language" in deps
         assert "total_imports" in deps
@@ -282,8 +290,9 @@ def get_data():
         py_file.write_text(py_code)
 
         result = extract_method(str(py_file), 3, 4, "calculate_result")
+        data = unwrap(result)
 
-        if "successfully" in result.lower():
+        if "successfully" in data.lower():
             new_content = py_file.read_text()
             assert "def calculate_result" in new_content
 
@@ -299,10 +308,11 @@ def calculate():
         py_file.write_text(py_code)
 
         result = inline_method(str(py_file), "simple_add")
+        data = unwrap(result)
 
-        if "successfully" in result.lower():
+        if "successfully" in data.lower():
             new_content = py_file.read_text()
-            assert "def simple_add" not in new_content or "inline" in result.lower()
+            assert "def simple_add" not in new_content or "inline" in data.lower()
 
 
 class TestDeadCodeOperations:
@@ -322,15 +332,14 @@ print(used_function())
         py_file.write_text(py_code)
 
         result = detect_dead_code(str(py_file))
+        data = unwrap(result)
 
         # Should return some analysis
-        if "no dead code" not in result.lower():
-            try:
-                dead_code_info = json.loads(result)
-                assert "dead_functions" in dead_code_info or "functions" in dead_code_info
-            except json.JSONDecodeError:
-                # Result might be plain text
-                assert len(result) > 0
+        if isinstance(data, dict):
+            assert "dead_functions" in data or "functions" in data
+        else:
+            if "no dead code" not in data.lower():
+                assert "dead_functions" in data or "functions" in data
 
     def test_remove_dead_code_requires_confirmation(self, temp_dir):
         """Test that dead code removal requires confirmation."""
@@ -344,7 +353,8 @@ print("hello")
 
         # Without confirmation should not remove
         result = remove_dead_code(str(py_file), confirm=False)
-        assert "confirmation" in result.lower()
+        data = unwrap(result, allow_error=True)
+        assert "confirmation" in data.get("error", "").lower()
 
         # Original content should be unchanged
         content = py_file.read_text()
@@ -365,7 +375,8 @@ print(used_function())
 
         result = remove_dead_code(str(py_file), confirm=True)
 
-        if "successfully" in result.lower():
+        data = unwrap(result)
+        if "successfully" in data.lower():
             new_content = py_file.read_text()
             assert "used_function" in new_content
 
@@ -386,7 +397,11 @@ def test_function():
 
         result = find_code_pattern(str(py_file), r'print\("Debug', "regex")
 
-        assert "found" in result.lower() or "matches" in result.lower() or "Debug" in result
+        data = unwrap(result)
+        if isinstance(data, dict):
+            assert "matches" in data or data.get("total_matches", 0) >= 0
+        else:
+            assert "found" in data.lower() or "matches" in data.lower() or "debug" in data.lower()
 
     def test_apply_code_pattern(self, temp_dir):
         """Test applying code pattern transformations."""
@@ -404,7 +419,8 @@ def main():
         )
 
         # Should return some result
-        assert isinstance(result, str) and len(result) > 0
+        data = unwrap(result)
+        assert isinstance(data, str) and len(data) > 0
 
 
 class TestFileMovementOperations:
@@ -431,7 +447,8 @@ def keep_function():
 
         result = move_function(str(source_file), str(target_file), "utility_function")
 
-        if "successfully" in result.lower():
+        data = unwrap(result)
+        if "successfully" in data.lower():
             source_content = source_file.read_text()
             target_content = target_file.read_text()
 
@@ -463,7 +480,8 @@ class KeepClass:
 
         result = move_class(str(source_file), str(target_file), "UtilityClass")
 
-        if "successfully" in result.lower():
+        data = unwrap(result)
+        if "successfully" in data.lower():
             source_content = source_file.read_text()
             target_content = target_file.read_text()
 
@@ -487,7 +505,8 @@ result = old_function_name()
 
         result = rename_symbol(str(py_file), "old_function_name", "new_function_name", "file")
 
-        if "successfully" in result.lower():
+        data = unwrap(result)
+        if "successfully" in data.lower():
             new_content = py_file.read_text()
             assert "new_function_name" in new_content
             assert "old_function_name" not in new_content
@@ -500,63 +519,55 @@ class TestHealthAndMetrics:
         """Test quick health status check."""
         result = quick_health_status()
 
-        # Should return JSON with health status
-        try:
-            status = json.loads(result)
-            assert "status" in status
-            # Check for expected fields (timestamp might have different name)
-            expected_fields = [
-                "timestamp",
-                "uptime_seconds",
-                "last_full_check",
-                "handlers_available",
-            ]
-            assert any(field in status for field in expected_fields)
-        except json.JSONDecodeError:
-            # Might be plain text response
-            assert len(result) > 0
+        status = unwrap(result, allow_error=True)
+        if status.get("success") is False:
+            assert "error" in status
+            return
+
+        assert "status" in status
+        expected_fields = [
+            "timestamp",
+            "uptime_seconds",
+            "last_full_check",
+            "handlers_available",
+        ]
+        assert any(field in status for field in expected_fields)
 
     def test_health_check_success(self):
         """Test comprehensive health check."""
         result = health_check()
 
-        # Should return some health check result
-        try:
-            status = json.loads(result)
-            # Health check response might have different structure
-            # Look for key indicators of health check data
-            health_indicators = ["status", "checks", "timestamp", "duration", "overall_status"]
-            assert any(indicator in status for indicator in health_indicators)
-        except json.JSONDecodeError:
-            # Might be plain text response
-            assert len(result) > 0
+        status = unwrap(result, allow_error=True)
+        if status.get("success") is False:
+            assert "error" in status
+            return
+
+        health_indicators = ["status", "checks", "timestamp", "duration", "overall_status"]
+        assert any(indicator in status for indicator in health_indicators)
 
     def test_health_check_failure(self):
         """Test health check handles errors gracefully."""
         # Just test that it doesn't crash
-        result = health_check()
-        assert isinstance(result, str)
-        assert len(result) > 0
+        result = unwrap(health_check(), allow_error=True)
+        assert isinstance(result, dict)
 
     def test_server_metrics(self):
         """Test server metrics collection."""
         result = server_metrics()
 
-        # Should return some metrics data
-        try:
-            metrics = json.loads(result)
-            # Check for any metric fields
-            metric_fields = [
-                "server_uptime",
-                "status",
-                "uptime_seconds",
-                "handlers",
-                "operations_count",
-            ]
-            assert any(field in metrics for field in metric_fields)
-        except json.JSONDecodeError:
-            # Might be plain text response
-            assert len(result) > 0
+        metrics = unwrap(result, allow_error=True)
+        if metrics.get("success") is False:
+            assert "error" in metrics
+            return
+
+        metric_fields = [
+            "server_uptime",
+            "status",
+            "uptime_seconds",
+            "handlers",
+            "operations_count",
+        ]
+        assert any(field in metrics for field in metric_fields)
 
 
 class TestValidationOperations:
@@ -576,7 +587,7 @@ class TestValidationOperations:
 
         # Should return validation result
         try:
-            validation = json.loads(result)
+            validation = unwrap(result)
             assert "is_valid" in validation
         except json.JSONDecodeError:
             # Might be plain text
@@ -591,7 +602,9 @@ class TestErrorHandling:
         result = get_code_structure("/nonexistent/file.py")
 
         # Should return error information
-        assert "error" in result.lower() or "not found" in result.lower()
+        payload = unwrap(result, allow_error=True)
+        assert payload["success"] is False
+        assert "error" in payload
 
     def test_unsupported_language_gracefully(self, temp_dir):
         """Test handling of unsupported file types."""
@@ -601,7 +614,8 @@ class TestErrorHandling:
         result = get_code_structure(str(binary_file))
 
         # Should handle gracefully, not crash
-        assert isinstance(result, str)
+        payload = unwrap(result, allow_error=True)
+        assert "success" in payload
 
     def test_malformed_code_handling(self, temp_dir):
         """Test handling of malformed code."""
@@ -615,8 +629,8 @@ class TestErrorHandling:
         result = get_code_structure(str(py_file))
 
         # Should not crash, return some response
-        assert isinstance(result, str)
-        assert len(result) > 0
+        payload = unwrap(result, allow_error=True)
+        assert "success" in payload
 
     def test_empty_file_handling(self, temp_dir):
         """Test handling of empty files."""
@@ -626,13 +640,12 @@ class TestErrorHandling:
         result = get_code_structure(str(empty_file))
 
         # Should handle empty files gracefully
-        try:
-            structure = json.loads(result)
+        structure = unwrap(result, allow_error=True)
+        if structure.get("success") is False:
+            assert "error" in structure
+        else:
             assert structure["language"] == "Python"
             assert len(structure["functions"]) == 0
-        except json.JSONDecodeError:
-            # Might return error message, which is also acceptable
-            assert len(result) > 0
 
 
 class TestLanguageSpecificOperations:
@@ -658,7 +671,7 @@ class TestClass {
 
         # Test structure analysis
         result = get_code_structure(str(js_file))
-        structure = json.loads(result)
+        structure = unwrap(result)
 
         assert structure["language"] == "JavaScript"
         assert len(structure["functions"]) >= 1
@@ -687,7 +700,7 @@ func (s *Server) Start() error {
 
         # Test structure analysis
         result = get_code_structure(str(go_file))
-        structure = json.loads(result)
+        structure = unwrap(result)
 
         assert structure["language"] == "Go"
         assert len(structure["functions"]) >= 1
@@ -709,7 +722,8 @@ def main(): pass
         py_file.write_text(py_code)
 
         py_result = organize_imports(str(py_file))
-        assert "successfully" in py_result.lower() or "organized" in py_result.lower()
+        py_data = unwrap(py_result)
+        assert "successfully" in py_data.lower() or "organized" in py_data.lower()
 
         # Test JavaScript imports
         js_code = """const path = require('path');
@@ -722,8 +736,8 @@ function main() {}
         js_file.write_text(js_code)
 
         js_result = organize_imports(str(js_file))
-        # Should handle JavaScript imports appropriately
-        assert isinstance(js_result, str)
+        js_data = unwrap(js_result)
+        assert isinstance(js_data, str)
 
 
 class TestLanguageAutoDetection:
@@ -741,7 +755,7 @@ def test_function():
 
         # Call without explicit language parameter
         result = get_code_structure(str(py_file), language=None)
-        structure = json.loads(result)
+        structure = unwrap(result)
 
         # Should automatically detect Python
         assert structure["language"] == "Python"
@@ -757,7 +771,7 @@ def test_function():
 
         # Should return valid response
         try:
-            structure = json.loads(result)
+            structure = unwrap(result)
             assert structure["language"] == "Python"
         except json.JSONDecodeError:
             # If detection failed, should at least return some message

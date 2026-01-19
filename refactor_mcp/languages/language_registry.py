@@ -1,6 +1,7 @@
 """Language registry and detection system."""
 
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -72,12 +73,13 @@ class LanguageRegistry:
             if handler and handler.can_handle_file(file_path):
                 return handler
 
-        # Try all handlers as fallback
+        # Try all handlers as fallback (prefer the last matching handler)
+        fallback_handler = None
         for handler in self._handlers.values():
             if handler.can_handle_file(file_path):
-                return handler
+                fallback_handler = handler
 
-        return None
+        return fallback_handler
 
     def detect_language_by_extension(self, file_path: Union[str, Path]) -> Optional[str]:
         """Detect language by file extension."""
@@ -115,6 +117,7 @@ class LanguageRegistry:
                 :1000
             ]  # First 1KB
             content_lower = content.lower()
+            content_stripped = content.lstrip()
 
             # Check shebangs
             if content.startswith("#!"):
@@ -127,23 +130,45 @@ class LanguageRegistry:
             # Check for language indicators
             if "<!doctype html" in content_lower or "<html" in content_lower:
                 return "html"
-            elif content.strip().startswith("{") or content.strip().startswith("["):
+            elif content_stripped.startswith("{") or content_stripped.startswith("["):
                 # Likely JSON
                 return "json"
-            elif "import " in content or "export " in content or "require(" in content:
-                # JavaScript/TypeScript indicators
-                if "interface " in content or "type " in content or ": " in content:
-                    return "typescript"
-                else:
-                    return "javascript"
-            elif "package " in content and "func " in content:
+            elif "package " in content_lower and (
+                "func " in content_lower or "import " in content_lower
+            ):
                 # Go indicators
-                if "package main" in content or "import (" in content:
-                    return "go"
-            elif "def " in content or "import " in content or "class " in content:
-                # Python indicators (be careful with 'def' in other languages)
-                if "function " not in content:  # Less likely to be JS
-                    return "python"
+                return "go"
+
+            typescript_keywords = (
+                "interface ",
+                "type ",
+                "enum ",
+                "implements ",
+                "readonly ",
+            )
+            if any(keyword in content_lower for keyword in typescript_keywords):
+                return "typescript"
+
+            if re.search(
+                r"\b(function|const|let|var)\s+\w+\s*:\s*[\w<>\[\],\s|&]+",
+                content,
+            ) or re.search(r"\bfunction\s+\w+\s*\([^)]*:\s*[\w<>\[\],\s|&]+\)", content):
+                return "typescript"
+
+            js_import = re.search(
+                r"^\s*import\s+.*from\s+['\"]", content, re.MULTILINE
+            ) or re.search(r"^\s*import\s+['\"]", content, re.MULTILINE)
+            js_export = re.search(r"^\s*export\s+", content, re.MULTILINE)
+            if js_import or js_export or "require(" in content:
+                # JavaScript/TypeScript indicators
+                if "interface " in content_lower or "type " in content_lower:
+                    return "typescript"
+                return "javascript"
+
+            if re.search(r"^\s*def\s+\w+\s*\(.*\)\s*:", content, re.MULTILINE) or re.search(
+                r"^\s*class\s+\w+\s*:", content, re.MULTILINE
+            ) or re.search(r"^\s*from\s+\w+\s+import\s+", content, re.MULTILINE):
+                return "python"
 
             # Check mime type
             mime_type, _ = mimetypes.guess_type(str(file_path))
@@ -197,8 +222,14 @@ def get_handler_by_language(language_name: str) -> Optional[BaseLanguageHandler]
 
 def detect_language(file_path: Union[str, Path]) -> Optional[str]:
     """Detect language for a file."""
-    handler = get_handler_for_file(file_path)
-    return handler.language_name if handler else None
+    language_name = _registry.detect_language_by_extension(file_path)
+    if not language_name:
+        language_name = _registry.detect_language_by_content(file_path)
+    if not language_name:
+        return None
+
+    handler = _registry.get_handler(language_name)
+    return handler.language_name if handler else language_name
 
 
 def list_supported_languages() -> List[str]:
@@ -213,7 +244,13 @@ def list_supported_extensions() -> List[str]:
 
 def validate_operation_support(file_path: Union[str, Path], operation: str) -> bool:
     """Check if an operation is supported for a file."""
-    handler = get_handler_for_file(file_path)
+    language_name = _registry.detect_language_by_extension(file_path)
+    if not language_name:
+        language_name = _registry.detect_language_by_content(file_path)
+    if not language_name:
+        return False
+
+    handler = _registry.get_handler(language_name)
     if not handler:
         return False
 
@@ -222,7 +259,13 @@ def validate_operation_support(file_path: Union[str, Path], operation: str) -> b
         from .base_handler import RefactoringOperation
 
         op_enum = RefactoringOperation(operation)
-        return op_enum in handler.supported_operations
+        supported = getattr(handler, "supported_operations", None)
+        if supported is None:
+            return False
+        try:
+            return op_enum in supported
+        except TypeError:
+            return False
     except ValueError:
         return False
 

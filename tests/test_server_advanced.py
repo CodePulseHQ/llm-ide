@@ -31,6 +31,7 @@ from refactor_mcp.server import (
     reorder_function,
     validate_refactoring_operation,
 )
+from tests.utils import unwrap
 
 
 class TestServerAdvanced:
@@ -59,8 +60,8 @@ class TestServerAdvanced:
         ) as mock_list:
             mock_list.return_value = []
 
-            result = get_supported_languages()
-            assert result == []
+            result = unwrap(get_supported_languages())
+            assert result["supported_languages"] == []
 
         # Test with many languages
         with patch(
@@ -68,9 +69,9 @@ class TestServerAdvanced:
         ) as mock_list:
             mock_list.return_value = ["python", "javascript", "typescript", "go", "html", "css"]
 
-            result = get_supported_languages()
-            assert len(result) == 6
-            assert "python" in result
+            result = unwrap(get_supported_languages())
+            assert len(result["supported_languages"]) == 6
+            assert "python" in result["supported_languages"]
 
     def test_detect_file_language_error_cases(self, temp_dir):
         """Test file language detection error handling."""
@@ -81,19 +82,17 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.detect_language") as mock_detect:
             mock_detect.side_effect = FileNotFoundError("File not found")
 
-            with pytest.raises(RefactoringError) as exc_info:
-                detect_file_language(str(nonexistent))
-
-            assert "not found" in str(exc_info.value).lower()
+            payload = unwrap(detect_file_language(str(nonexistent)), allow_error=True)
+            assert payload["success"] is False
+            assert "not found" in payload["error"].lower()
 
         # Test with permission denied
         with patch("refactor_mcp.languages.language_registry.detect_language") as mock_detect:
             mock_detect.side_effect = PermissionError("Permission denied")
 
-            with pytest.raises(RefactoringError) as exc_info:
-                detect_file_language(str(nonexistent))
-
-            assert "permission" in str(exc_info.value).lower()
+            payload = unwrap(detect_file_language(str(nonexistent)), allow_error=True)
+            assert payload["success"] is False
+            assert "permission" in payload["error"].lower()
 
         # Test with unknown language
         unknown_file = temp_dir / "unknown.xyz"
@@ -102,10 +101,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.detect_language") as mock_detect:
             mock_detect.return_value = None
 
-            with pytest.raises(RefactoringError) as exc_info:
-                detect_file_language(str(unknown_file))
-
-            assert "could not detect" in str(exc_info.value).lower()
+            payload = unwrap(detect_file_language(str(unknown_file)), allow_error=True)
+            assert payload["success"] is False
+            assert "could not detect" in payload["error"].lower()
 
     def test_reorder_function_error_handling(self, temp_dir):
         """Test reorder function error handling."""
@@ -116,10 +114,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.return_value = None
 
-            with pytest.raises(RefactoringError) as exc_info:
-                reorder_function(str(py_file), "test", "top")
-
-            assert "no suitable handler" in str(exc_info.value).lower()
+            payload = unwrap(reorder_function(str(py_file), "test", "top"), allow_error=True)
+            assert payload["success"] is False
+            assert "no suitable handler" in payload["error"].lower()
 
         # Test with handler error
         mock_handler_obj = Mock()
@@ -128,17 +125,17 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.return_value = mock_handler_obj
 
-            with pytest.raises(RefactoringError) as exc_info:
-                reorder_function(str(py_file), "test", "top")
-
-            assert "handler error" in str(exc_info.value).lower()
+            payload = unwrap(reorder_function(str(py_file), "test", "top"), allow_error=True)
+            assert payload["success"] is False
+            assert "handler error" in payload["error"].lower()
 
         # Test with invalid position
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.return_value = mock_handler_obj
 
-            result = reorder_function(str(py_file), "test", "invalid_position", "reference")
-            # Should handle invalid position gracefully
+            result = unwrap(
+                reorder_function(str(py_file), "test", "invalid_position", "reference")
+            )
             assert isinstance(result, str)
 
     def test_organize_imports_comprehensive_errors(self, temp_dir):
@@ -150,10 +147,9 @@ class TestServerAdvanced:
         with patch("pathlib.Path.read_text") as mock_read:
             mock_read.side_effect = UnicodeDecodeError("utf-8", b"", 0, 1, "invalid")
 
-            with pytest.raises(RefactoringError) as exc_info:
-                organize_imports(str(js_file))
-
-            assert "encoding" in str(exc_info.value).lower()
+            payload = unwrap(organize_imports(str(js_file)), allow_error=True)
+            assert payload["success"] is False
+            assert "encoding" in payload["error"].lower()
 
         # Test with file write error
         mock_handler = Mock()
@@ -164,10 +160,9 @@ class TestServerAdvanced:
             with patch("pathlib.Path.write_text") as mock_write:
                 mock_write.side_effect = PermissionError("Permission denied")
 
-                with pytest.raises(RefactoringError) as exc_info:
-                    organize_imports(str(js_file))
-
-                assert "permission" in str(exc_info.value).lower()
+                payload = unwrap(organize_imports(str(js_file)), allow_error=True)
+                assert payload["success"] is False
+                assert "permission" in payload["error"].lower()
 
     def test_add_import_error_scenarios(self, temp_dir):
         """Test add import error scenarios."""
@@ -178,8 +173,8 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.return_value = None
 
-            with pytest.raises(RefactoringError):
-                add_import(str(py_file), "os", [])
+            payload = unwrap(add_import(str(py_file), "os", []), allow_error=True)
+            assert payload["success"] is False
 
         # Test with handler exception
         mock_handler_obj = Mock()
@@ -188,15 +183,13 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.return_value = mock_handler_obj
 
-            with pytest.raises(RefactoringError) as exc_info:
-                add_import(str(py_file), "os", [])
-
-            assert "import error" in str(exc_info.value).lower()
+            payload = unwrap(add_import(str(py_file), "os", []), allow_error=True)
+            assert payload["success"] is False
+            assert "import error" in payload["error"].lower()
 
         # Test with empty module name
-        result = add_import(str(py_file), "", [])
-        # Should handle gracefully
-        assert isinstance(result, str)
+        result = unwrap(add_import(str(py_file), "", []), allow_error=True)
+        assert isinstance(result, dict)
 
     def test_remove_unused_imports_comprehensive(self, temp_dir):
         """Test remove unused imports comprehensive scenarios."""
@@ -211,7 +204,8 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = remove_unused_imports(str(js_file))
-            assert "removed" in result.lower()
+            data = unwrap(result)
+            assert "removed" in data.lower()
             mock_handler.remove_unused_imports.assert_called_once()
 
         # Test with NotImplementedError
@@ -220,10 +214,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                remove_unused_imports(str(js_file))
-
-            assert "not implemented" in str(exc_info.value).lower()
+            payload = unwrap(remove_unused_imports(str(js_file)), allow_error=True)
+            assert payload["success"] is False
+            assert "not implemented" in payload["error"].lower()
 
     def test_move_function_comprehensive_errors(self, temp_dir):
         """Test move function comprehensive error handling."""
@@ -236,10 +229,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.return_value = None
 
-            with pytest.raises(RefactoringError) as exc_info:
-                move_function(str(source), str(target), "func")
-
-            assert "source file" in str(exc_info.value).lower()
+            payload = unwrap(move_function(str(source), str(target), "func"), allow_error=True)
+            assert payload["success"] is False
+            assert "source file" in payload["error"].lower()
 
         # Test with target file handler missing
         mock_handler_obj = Mock()
@@ -252,10 +244,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.side_effect = side_effect
 
-            with pytest.raises(RefactoringError) as exc_info:
-                move_function(str(source), str(target), "func")
-
-            assert "target file" in str(exc_info.value).lower()
+            payload = unwrap(move_function(str(source), str(target), "func"), allow_error=True)
+            assert payload["success"] is False
+            assert "target file" in payload["error"].lower()
 
         # Test with different language handlers
         source_handler = Mock()
@@ -271,10 +262,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_handler:
             mock_handler.side_effect = side_effect_lang
 
-            with pytest.raises(RefactoringError) as exc_info:
-                move_function(str(source), str(target), "func")
-
-            assert "different languages" in str(exc_info.value).lower()
+            payload = unwrap(move_function(str(source), str(target), "func"), allow_error=True)
+            assert payload["success"] is False
+            assert "different languages" in payload["error"].lower()
 
     def test_move_class_error_scenarios(self, temp_dir):
         """Test move class error scenarios."""
@@ -294,7 +284,8 @@ class TestServerAdvanced:
             mock_handler_func.return_value = mock_handler
 
             result = move_class(str(source), str(target), "TestClass")
-            assert "success" in result.lower()
+            data = unwrap(result)
+            assert "success" in data.lower()
 
         # Test with move operation failure
         mock_handler.move_class.side_effect = ValueError("Class not found")
@@ -304,10 +295,9 @@ class TestServerAdvanced:
         ) as mock_handler_func:
             mock_handler_func.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                move_class(str(source), str(target), "TestClass")
-
-            assert "class not found" in str(exc_info.value).lower()
+            payload = unwrap(move_class(str(source), str(target), "TestClass"), allow_error=True)
+            assert payload["success"] is False
+            assert "class not found" in payload["error"].lower()
 
     def test_get_code_structure_error_handling(self, temp_dir):
         """Test get code structure error handling."""
@@ -319,13 +309,9 @@ class TestServerAdvanced:
         binary_file.write_bytes(b"\xff\xfe\x00\x00")
 
         # Should handle binary files gracefully
-        try:
-            result = get_code_structure(str(binary_file))
-            # May succeed with some handler or fail gracefully
-            assert isinstance(result, (str, dict))
-        except RefactoringError:
-            # Expected for binary files
-            pass
+        result = get_code_structure(str(binary_file))
+        payload = unwrap(result, allow_error=True)
+        assert "success" in payload
 
         # Test with handler parsing error
         mock_handler = Mock()
@@ -334,10 +320,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                get_code_structure(str(py_file))
-
-            assert "invalid syntax" in str(exc_info.value).lower()
+            payload = unwrap(get_code_structure(str(py_file)), allow_error=True)
+            assert payload["success"] is False
+            assert "invalid syntax" in payload["error"].lower()
 
     def test_analyze_dependencies_comprehensive(self, temp_dir):
         """Test analyze dependencies comprehensive scenarios."""
@@ -355,7 +340,7 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            result = analyze_dependencies(str(js_file))
+            result = unwrap(analyze_dependencies(str(js_file)))
             assert result["language"] == "JavaScript"
             assert result["total_imports"] == 1
 
@@ -365,10 +350,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                analyze_dependencies(str(js_file))
-
-            assert "module not found" in str(exc_info.value).lower()
+            payload = unwrap(analyze_dependencies(str(js_file)), allow_error=True)
+            assert payload["success"] is False
+            assert "module not found" in payload["error"].lower()
 
     def test_rename_symbol_edge_cases(self, temp_dir):
         """Test rename symbol edge cases."""
@@ -382,20 +366,22 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            result = rename_symbol(str(py_file), "old_name", "new_name", "invalid_scope")
-            # Should handle invalid scope parameter
-            assert isinstance(result, str)
+            result = unwrap(
+                rename_symbol(str(py_file), "old_name", "new_name", "invalid_scope"),
+                allow_error=True,
+            )
+            assert isinstance(result, dict)
 
         # Test with empty symbol names
-        result = rename_symbol(str(py_file), "", "new_name", "file")
-        assert isinstance(result, str)
+        result = unwrap(rename_symbol(str(py_file), "", "new_name", "file"), allow_error=True)
+        assert isinstance(result, dict)
 
-        result = rename_symbol(str(py_file), "old_name", "", "file")
-        assert isinstance(result, str)
+        result = unwrap(rename_symbol(str(py_file), "old_name", "", "file"), allow_error=True)
+        assert isinstance(result, dict)
 
         # Test with same old and new names
-        result = rename_symbol(str(py_file), "same_name", "same_name", "file")
-        assert isinstance(result, str)
+        result = unwrap(rename_symbol(str(py_file), "same_name", "same_name", "file"), allow_error=True)
+        assert isinstance(result, dict)
 
     def test_extract_method_validation_errors(self, temp_dir):
         """Test extract method validation and error handling."""
@@ -409,14 +395,15 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                extract_method(str(py_file), 10, 5, "new_method")  # end < start
-
-            assert "invalid line range" in str(exc_info.value).lower()
+            payload = unwrap(
+                extract_method(str(py_file), 10, 5, "new_method"), allow_error=True
+            )
+            assert payload["success"] is False
+            assert "invalid line range" in payload["error"].lower()
 
         # Test with invalid method name
-        result = extract_method(str(py_file), 1, 2, "")
-        assert isinstance(result, str)
+        result = unwrap(extract_method(str(py_file), 1, 2, ""), allow_error=True)
+        assert isinstance(result, dict)
 
         # Test with conflicting method name
         mock_handler.extract_method.side_effect = NameError("Method already exists")
@@ -424,10 +411,11 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                extract_method(str(py_file), 1, 2, "existing_method")
-
-            assert "already exists" in str(exc_info.value).lower()
+            payload = unwrap(
+                extract_method(str(py_file), 1, 2, "existing_method"), allow_error=True
+            )
+            assert payload["success"] is False
+            assert "already exists" in payload["error"].lower()
 
     def test_inline_method_error_scenarios(self, temp_dir):
         """Test inline method error scenarios."""
@@ -441,10 +429,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                inline_method(str(py_file), "nonexistent_method")
-
-            assert "method not found" in str(exc_info.value).lower()
+            payload = unwrap(inline_method(str(py_file), "nonexistent_method"), allow_error=True)
+            assert payload["success"] is False
+            assert "method not found" in payload["error"].lower()
 
         # Test with recursive method
         mock_handler.inline_method.side_effect = RecursionError("Cannot inline recursive method")
@@ -452,10 +439,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                inline_method(str(py_file), "recursive_method")
-
-            assert "recursive" in str(exc_info.value).lower()
+            payload = unwrap(inline_method(str(py_file), "recursive_method"), allow_error=True)
+            assert payload["success"] is False
+            assert "recursive" in payload["error"].lower()
 
     def test_health_check_comprehensive_scenarios(self):
         """Test health check comprehensive scenarios."""
@@ -471,7 +457,7 @@ class TestServerAdvanced:
             }
             mock_checker.return_value = mock_instance
 
-            result = health_check()
+            result = unwrap(health_check())
             assert result["overall_status"] == "healthy"
 
         # Test with degraded systems
@@ -486,15 +472,15 @@ class TestServerAdvanced:
             }
             mock_checker.return_value = mock_instance
 
-            result = health_check()
+            result = unwrap(health_check())
             assert result["overall_status"] == "degraded"
 
         # Test with health check exception
         with patch("refactor_mcp.health_checks.HealthChecker") as mock_checker:
             mock_checker.side_effect = Exception("Health check failed")
 
-            result = health_check()
-            assert result["overall_status"] == "unhealthy"
+            result = unwrap(health_check(), allow_error=True)
+            assert result["success"] is False
             assert "health check failed" in result["error"].lower()
 
     def test_quick_health_status_scenarios(self):
@@ -505,7 +491,7 @@ class TestServerAdvanced:
             mock_instance.get_quick_status.return_value = "healthy"
             mock_checker.return_value = mock_instance
 
-            result = quick_health_status()
+            result = unwrap(quick_health_status())
             assert result == "healthy"
 
         # Test unhealthy status
@@ -514,14 +500,14 @@ class TestServerAdvanced:
             mock_instance.get_quick_status.return_value = "unhealthy"
             mock_checker.return_value = mock_instance
 
-            result = quick_health_status()
+            result = unwrap(quick_health_status())
             assert result == "unhealthy"
 
         # Test exception handling
         with patch("refactor_mcp.health_checks.HealthChecker") as mock_checker:
             mock_checker.side_effect = RuntimeError("Quick status failed")
 
-            result = quick_health_status()
+            result = unwrap(quick_health_status())
             assert result == "unhealthy"
 
     def test_detect_dead_code_comprehensive(self, temp_dir):
@@ -539,7 +525,7 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = detect_dead_code(str(py_file))
-            dead_code = json.loads(result)
+            dead_code = unwrap(result)
             assert "unused" in dead_code["dead_functions"]
 
         # Test with no dead code
@@ -549,7 +535,8 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = detect_dead_code(str(py_file))
-            assert "no dead code" in result.lower()
+            data = unwrap(result)
+            assert "no dead code" in data.lower()
 
         # Test with detection error
         mock_handler.detect_dead_code.side_effect = MemoryError("Analysis too complex")
@@ -557,10 +544,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                detect_dead_code(str(py_file))
-
-            assert "too complex" in str(exc_info.value).lower()
+            payload = unwrap(detect_dead_code(str(py_file)), allow_error=True)
+            assert payload["success"] is False
+            assert "too complex" in payload["error"].lower()
 
     def test_remove_dead_code_comprehensive(self, temp_dir):
         """Test remove dead code comprehensive scenarios."""
@@ -575,7 +561,8 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = remove_dead_code(str(py_file), confirm=False)
-            assert "confirm" in result.lower()
+            data = unwrap(result)
+            assert "confirm" in data.lower()
 
         # Test with confirmation
         mock_handler.remove_dead_code.return_value = "Removed 1 dead function"
@@ -584,7 +571,8 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = remove_dead_code(str(py_file), confirm=True)
-            assert "removed" in result.lower()
+            data = unwrap(result)
+            assert "removed" in data.lower()
 
         # Test with removal error
         mock_handler.remove_dead_code.side_effect = OSError("File is read-only")
@@ -592,10 +580,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                remove_dead_code(str(py_file), confirm=True)
-
-            assert "read-only" in str(exc_info.value).lower()
+            payload = unwrap(remove_dead_code(str(py_file), confirm=True), allow_error=True)
+            assert payload["success"] is False
+            assert "read-only" in payload["error"].lower()
 
     def test_find_code_pattern_comprehensive(self, temp_dir):
         """Test find code pattern comprehensive scenarios."""
@@ -610,7 +597,8 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = find_code_pattern(str(js_file), r"console\.log", "regex")
-            assert "found 2 matches" in result.lower()
+            data = unwrap(result)
+            assert "found 2 matches" in data.lower()
 
         # Test AST pattern finding
         mock_handler.find_code_pattern.return_value = "Found 1 function: test"
@@ -619,7 +607,8 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = find_code_pattern(str(js_file), "function_declaration", "ast")
-            assert "found 1 function" in result.lower()
+            data = unwrap(result)
+            assert "found 1 function" in data.lower()
 
         # Test semantic pattern finding
         mock_handler.find_code_pattern.return_value = "Found console usage patterns"
@@ -628,11 +617,13 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = find_code_pattern(str(js_file), "console_usage", "semantic")
-            assert "console usage" in result.lower()
+            data = unwrap(result)
+            assert "console usage" in data.lower()
 
         # Test with invalid pattern type
         result = find_code_pattern(str(js_file), "pattern", "invalid_type")
-        assert "invalid pattern type" in result.lower()
+        data = unwrap(result, allow_error=True)
+        assert "invalid pattern type" in data.get("error", "").lower()
 
         # Test with pattern finding error
         mock_handler.find_code_pattern.side_effect = re.error("Invalid regex")
@@ -640,10 +631,9 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                find_code_pattern(str(js_file), "[invalid", "regex")
-
-            assert "invalid regex" in str(exc_info.value).lower()
+            payload = unwrap(find_code_pattern(str(js_file), "[invalid", "regex"), allow_error=True)
+            assert payload["success"] is False
+            assert "invalid regex" in payload["error"].lower()
 
     def test_apply_code_pattern_comprehensive(self, temp_dir):
         """Test apply code pattern comprehensive scenarios."""
@@ -658,7 +648,8 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = apply_code_pattern(str(js_file), "var", "const", "regex", 2)
-            assert "replaced 2" in result.lower()
+            data = unwrap(result)
+            assert "replaced 2" in data.lower()
 
         # Test semantic pattern application
         mock_handler.apply_code_pattern.return_value = "Applied var_to_const transformation"
@@ -667,11 +658,13 @@ class TestServerAdvanced:
             mock_get.return_value = mock_handler
 
             result = apply_code_pattern(str(js_file), "var_to_const", "", "semantic", -1)
-            assert "var_to_const" in result.lower()
+            data = unwrap(result)
+            assert "var_to_const" in data.lower()
 
         # Test with invalid replacement limit
         result = apply_code_pattern(str(js_file), "var", "const", "regex", 0)
-        assert "invalid" in result.lower() or "limit" in result.lower()
+        data = unwrap(result, allow_error=True)
+        assert "invalid" in data.get("error", "").lower() or "limit" in data.get("error", "").lower()
 
         # Test with application error
         mock_handler.apply_code_pattern.side_effect = IndexError("Pattern index out of range")
@@ -679,10 +672,12 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                apply_code_pattern(str(js_file), "complex_pattern", "replacement", "regex", 1)
-
-            assert "index out of range" in str(exc_info.value).lower()
+            payload = unwrap(
+                apply_code_pattern(str(js_file), "complex_pattern", "replacement", "regex", 1),
+                allow_error=True,
+            )
+            assert payload["success"] is False
+            assert "index out of range" in payload["error"].lower()
 
     def test_validate_refactoring_operation_comprehensive(self, temp_dir):
         """Test validate refactoring operation comprehensive scenarios."""
@@ -703,8 +698,9 @@ class TestServerAdvanced:
             result = validate_refactoring_operation(
                 str(py_file), "extract_method", start_line=1, end_line=1, method_name="extracted"
             )
-            assert result["is_valid"] is True
-            assert len(result["warnings"]) == 1
+            data = unwrap(result)
+            assert data["is_valid"] is True
+            assert len(data["warnings"]) == 1
 
         # Test validation failure
         mock_handler.validate_refactoring_operation.return_value = {
@@ -723,8 +719,9 @@ class TestServerAdvanced:
                 end_line=1,  # Invalid range
                 method_name="test",  # Conflicting name
             )
-            assert result["is_valid"] is False
-            assert len(result["errors"]) == 2
+            data = unwrap(result)
+            assert data["is_valid"] is False
+            assert len(data["errors"]) == 2
 
         # Test with validation error
         mock_handler.validate_refactoring_operation.side_effect = TypeError(
@@ -734,16 +731,19 @@ class TestServerAdvanced:
         with patch("refactor_mcp.languages.language_registry.get_handler_for_file") as mock_get:
             mock_get.return_value = mock_handler
 
-            with pytest.raises(RefactoringError) as exc_info:
-                validate_refactoring_operation(str(py_file), "invalid_operation")
-
-            assert "invalid operation" in str(exc_info.value).lower()
+            payload = unwrap(
+                validate_refactoring_operation(str(py_file), "invalid_operation"),
+                allow_error=True,
+            )
+            assert payload["success"] is False
+            assert "invalid operation" in payload["error"].lower()
 
         # Test with missing required parameters
         result = validate_refactoring_operation(str(py_file), "extract_method")
         # Should handle missing parameters gracefully
-        assert isinstance(result, dict)
-        assert "is_valid" in result
+        data = unwrap(result)
+        assert isinstance(data, dict)
+        assert "is_valid" in data
 
 
 # Import re for pattern testing

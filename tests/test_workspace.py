@@ -14,6 +14,7 @@ from refactor_mcp.workspace import (
     WorkspaceManager,
     WorkspaceOperations,
 )
+from tests.utils import unwrap
 
 
 @pytest.fixture
@@ -435,7 +436,7 @@ class TestServerIntegration:
         """Test the initialize_workspace MCP endpoint."""
         from refactor_mcp.server import initialize_workspace
 
-        result = json.loads(initialize_workspace(str(temp_project)))
+        result = unwrap(initialize_workspace(str(temp_project)))
 
         assert "workspace_id" in result
         assert "files_indexed" in result
@@ -446,14 +447,12 @@ class TestServerIntegration:
         from refactor_mcp.server import find_references, initialize_workspace
 
         # Initialize first
-        init_result = json.loads(initialize_workspace(str(temp_project)))
+        init_result = unwrap(initialize_workspace(str(temp_project)))
         workspace_id = init_result["workspace_id"]
 
         # Find references
         main_file = str(temp_project / "main.py")
-        result = json.loads(
-            find_references(main_file, "helper_function", workspace_id=workspace_id)
-        )
+        result = unwrap(find_references(main_file, "helper_function", workspace_id=workspace_id))
 
         assert result["symbol"] == "helper_function"
         assert result["total"] >= 1
@@ -463,12 +462,12 @@ class TestServerIntegration:
         from refactor_mcp.server import go_to_definition, initialize_workspace
 
         # Initialize first
-        init_result = json.loads(initialize_workspace(str(temp_project)))
+        init_result = unwrap(initialize_workspace(str(temp_project)))
         workspace_id = init_result["workspace_id"]
 
         # Go to definition
         main_file = str(temp_project / "main.py")
-        result = json.loads(go_to_definition(main_file, "User", workspace_id=workspace_id))
+        result = unwrap(go_to_definition(main_file, "User", workspace_id=workspace_id))
 
         assert result["found"] is True
         assert "models.py" in result["defined_in"]
@@ -477,7 +476,7 @@ class TestServerIntegration:
         """Test the search_symbols MCP endpoint."""
         from refactor_mcp.server import search_symbols
 
-        result = json.loads(search_symbols("help", root_path=str(temp_project)))
+        result = unwrap(search_symbols("help", root_path=str(temp_project)))
 
         assert result["total"] >= 2
         assert "matches" in result
@@ -487,14 +486,12 @@ class TestServerIntegration:
         from refactor_mcp.server import get_call_hierarchy, initialize_workspace
 
         # Initialize first
-        init_result = json.loads(initialize_workspace(str(temp_project)))
+        init_result = unwrap(initialize_workspace(str(temp_project)))
         workspace_id = init_result["workspace_id"]
 
         # Get call hierarchy
         utils_file = str(temp_project / "utils.py")
-        result = json.loads(
-            get_call_hierarchy(utils_file, "helper_function", workspace_id=workspace_id)
-        )
+        result = unwrap(get_call_hierarchy(utils_file, "helper_function", workspace_id=workspace_id))
 
         assert "callers" in result
         assert "callees" in result
@@ -503,7 +500,7 @@ class TestServerIntegration:
         """Test the workspace_rename MCP endpoint."""
         from refactor_mcp.server import workspace_rename
 
-        result = json.loads(
+        result = unwrap(
             workspace_rename("unused_function", "old_unused_function", root_path=str(temp_project))
         )
 
